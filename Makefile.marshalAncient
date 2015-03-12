@@ -1,0 +1,34 @@
+OCAML_MAKEFILE=Makefile.nt
+
+.PHONY: core
+core:
+	make -f $(OCAML_MAKEFILE) coldstart core
+
+.PHONY: boot
+boot:
+# [cross-compiler]
+#	make -f $(OCAML_MAKEFILE) core
+# [if you get "inconsistent assumptions"]
+#	make -f $(OCAML_MAKEFILE) partialclean
+# [cross-compiler]
+	make -f $(OCAML_MAKEFILE) core
+# Save the original bootstrap compiler
+	make -f $(OCAML_MAKEFILE) backup
+# Promote the new compiler but keep the old runtime
+# This compiler runs on boot/ocamlrun and produces bytecode for
+# byterun/ocamlrun
+	make -f $(OCAML_MAKEFILE) promote-cross
+# Rebuild ocamlc and ocamllex (run on byterun/ocamlrun)
+	make -f $(OCAML_MAKEFILE) partialclean
+	make -f $(OCAML_MAKEFILE) ocamlc ocamllex ocamltools
+# Rebuild the library (using byterun/ocamlrun ./ocamlc)
+	make -f $(OCAML_MAKEFILE) library-cross
+# Promote the new compiler and the new runtime
+	make -f $(OCAML_MAKEFILE) promote
+# Rebuild the core system
+	make -f $(OCAML_MAKEFILE) partialclean
+	make -f $(OCAML_MAKEFILE) core
+# Check if fixpoint reached
+	make -f $(OCAML_MAKEFILE) compare
+
+.DEFAULT: core boot

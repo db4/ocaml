@@ -26,6 +26,7 @@ list.cmi :
 listLabels.cmi :
 map.cmi :
 marshal.cmi :
+marshalAncient.cmi:
 moreLabels.cmi : set.cmi map.cmi hashtbl.cmi
 nativeint.cmi :
 obj.cmi : int32.cmi
@@ -119,6 +120,8 @@ map.cmo : map.cmi
 map.cmx : map.cmi
 marshal.cmo : bytes.cmi marshal.cmi
 marshal.cmx : bytes.cmx marshal.cmi
+marshalAncient.cmo: bytes.cmi marshal.cmi marshalAncient.cmi
+marshalAncient.cmx: bytes.cmx marshal.cmx marshalAncient.cmi
 moreLabels.cmo : set.cmi map.cmi hashtbl.cmi moreLabels.cmi
 moreLabels.cmx : set.cmx map.cmx hashtbl.cmx moreLabels.cmi
 nativeint.cmo : sys.cmi pervasives.cmi nativeint.cmi
@@ -245,6 +248,8 @@ map.cmo : map.cmi
 map.p.cmx : map.cmi
 marshal.cmo : bytes.cmi marshal.cmi
 marshal.p.cmx : bytes.p.cmx marshal.cmi
+marshalAncient.cmo: bytes.cmi marshal.cmi marshalAncient.cmi
+marshalAncient.p.cmx: bytes.p.cmx marshal.p.cmx marshalAncient.cmi
 moreLabels.cmo : set.cmi map.cmi hashtbl.cmi moreLabels.cmi
 moreLabels.p.cmx : set.p.cmx map.p.cmx hashtbl.p.cmx moreLabels.cmi
 nativeint.cmo : sys.cmi pervasives.cmi nativeint.cmi

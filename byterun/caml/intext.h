@@ -115,6 +115,15 @@ CAMLextern value caml_input_value_from_block(char * data, intnat len);
      and [len] is the length in bytes of valid data in this buffer.
      The buffer is never deallocated by this routine. */
 
+/* Ancient support */
+
+CAMLextern value caml_ancient_mark_info(value v);
+CAMLextern value caml_ancient_follow(value proxy);
+CAMLextern value caml_ancient_delete(value proxy);
+CAMLextern value caml_input_val_from_string_ancient_info(value str, intnat ofs);
+CAMLextern value caml_input_value_from_malloc_ancient_info(char * data, intnat ofs);
+CAMLextern value caml_input_value_from_block_ancient_info(char * data, intnat len);
+
 /* Functions for writing user-defined marshallers */
 
 CAMLextern void caml_serialize_int_1(int i);

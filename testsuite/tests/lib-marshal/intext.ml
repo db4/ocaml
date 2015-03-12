@@ -162,6 +162,123 @@ let test_in filename =
   test 39 (i == j);
   close_in ic
 
+let test_ancient ic cmp n =
+  let va = MarshalAncient.from_channel ic in
+  let v = MarshalAncient.follow va in
+  let b = cmp v in
+  MarshalAncient.delete va;
+  let b = b &&
+    (try ignore(MarshalAncient.follow va); false
+    with Invalid_argument("ancient_follow: deleted") -> true) in	
+  let b = b &&
+    (try MarshalAncient.delete va;
+    false with Invalid_argument("ancient_delete: deleted") -> true) in
+  test n b  
+
+let test_ancient_2 ic cmp vv n =
+  let bcmp v =
+    let va' = MarshalAncient.mark vv in
+    let v' = MarshalAncient.follow va' in
+    let res = cmp v vv && cmp v' vv in
+    MarshalAncient.delete va';
+    res in
+  test_ancient ic bcmp n
+
+let test_ancient_in filename =
+  let ic = open_in_bin filename in
+  let n = ref 1 in
+  let test_a cmp =
+    test_ancient ic cmp !n;
+    incr n in
+  let test_a_2 cmp v =
+    test_ancient_2 ic cmp v !n;
+    incr n in
+  let int_cmp (x: int) y = x = y in
+  let float_cmp (x: float) y = x = y in
+  let string_cmp (x: string) y = x = y in
+  test_a_2 int_cmp 1;
+  test_a_2 int_cmp (-1);
+  test_a_2 int_cmp 258;
+  test_a_2 int_cmp 20000;
+  test_a_2 int_cmp 0x12345678;
+  test_a_2 int_cmp bigint;
+  test_a_2 string_cmp "foobargeebuz";
+  test_a_2 string_cmp longstring;
+  test_a_2 string_cmp verylongstring;
+  test_a_2 float_cmp 3.141592654;
+  test_a (fun () -> true);
+  test_a (function
+    A -> true
+  | _ -> false);
+  test_a (function
+    (B 1) -> true
+  | _ -> false);
+  test_a (function
+    (C f) -> f = 2.718
+  | _ -> false);
+  test_a (function
+    (D "hello, world!") -> true
+  | _ -> false);
+  test_a (function
+    (E 'l') -> true
+  | _ -> false);
+  test_a (function
+    (F(B 1)) -> true
+  | _ -> false);
+  test_a (function
+    (G(A, G(B 2, G(C 3.14, G(D "glop", E 'e'))))) -> true
+  | _ -> false);
+  test_a (function
+    (H(1, A)) -> true
+  | _ -> false);
+  test_a (function
+    (I(B 2, 1e-6)) -> true
+  | _ -> false);
+  test_a (function
+    G((G((D "sharing" as t1), t2) as t3), G(t4, t5)) ->
+      t1 == t2 && t3 == t5 && t4 == t1
+  | _ -> false);
+  test_a (fun x ->
+    not (List.exists2
+      (fun a b -> a - b != 0)
+        (Array.to_list x) 
+        [1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16]));
+  let rec check_big n t =
+    if n <= 0 then
+      test 23 (match t with A -> true | _ -> false)
+    else
+      match t with H(m, s) -> if m = n then check_big (n-1) s
+                                       else test 23 false
+                 | _ -> test 23 false
+  in
+    check_big 1000 (input_value ic);
+  incr n;
+  test_a (function
+    G((D "sharing" as t1), (D "sharing" as t2)) -> t1 != t2
+  | _ -> false);
+  test 25 (let fib = (input_value ic : int -> int) in fib 5 = 8 && fib 10 = 89);
+  incr n;
+  test_a (fun x -> Int32.compare x (Int32.of_string "0") = 0);
+  test_a (fun x -> Int32.compare x (Int32.of_string "123456") = 0);
+  test_a (fun x -> Int32.compare x (Int32.of_string "-123456") = 0);
+  test_a (fun x -> Int64.compare x (Int64.of_string "0") = 0);
+  test_a (fun x -> Int64.compare x (Int64.of_string "123456789123456") = 0);
+  test_a (fun x -> Int64.compare x (Int64.of_string "-123456789123456") = 0);
+  test_a (fun x -> Nativeint.compare x (Nativeint.of_string "0") = 0);
+  test_a (fun x -> Nativeint.compare x (Nativeint.of_string "123456") = 0);
+  test_a (fun x -> Nativeint.compare x (Nativeint.of_string "-123456") = 0);
+  test_a (fun x -> Nativeint.compare x (
+             Nativeint.shift_left (Nativeint.of_string "123456789") 32) = 0);
+  test_a (fun x -> Nativeint.compare x (
+             Nativeint.shift_left (Nativeint.of_string "-123456789") 32) = 0);
+  let va = MarshalAncient.from_channel ic in
+  let ((i, j) : int64 * int64) = MarshalAncient.follow va in
+  test 37 (Int64.compare i (Int64.of_string "123456789123456") = 0);
+  test 38 (Int64.compare j (Int64.of_string "123456789123456") = 0);
+  test 39 (i == j);
+  MarshalAncient.delete va;
+  close_in ic
+
 let test_string () =
   let s = Marshal.to_string 1 [] in
   test 101 (Marshal.from_string s 0 = 1);
@@ -552,6 +669,7 @@ let test_mutual_rec_regression () =
 let main() =
   if Array.length Sys.argv <= 2 then begin
     test_out "intext.data"; test_in "intext.data";
+    test_out "intext.data"; test_ancient_in "intext.data";
     test_out "intext.data"; test_in "intext.data";
     Sys.remove "intext.data";
     test_string();

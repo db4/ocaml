@@ -45,6 +45,7 @@ STDLIB_MODULES=\
   listLabels \
   map \
   marshal \
+  marshalAncient \
   moreLabels \
   nativeint \
   obj \

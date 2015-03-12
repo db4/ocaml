@@ -70,6 +70,12 @@ static void intern_bad_code_pointer(unsigned char digest[16]) Noreturn;
 
 static void intern_free_stack(void);
 
+static asize_t intern_block_size;
+/* Size of intern_block in bytes (ancient mode) */
+
+static int intern_ancient;
+/* 1 if intern_block was allocated statically (ancient mode) */
+
 #define Sign_extend_shift ((sizeof(intnat) - 1) * 8)
 #define Sign_extend(x) (((intnat)(x) << Sign_extend_shift) >> Sign_extend_shift)
 
@@ -113,8 +119,12 @@ static void intern_cleanup(void)
     /* free newly allocated heap chunk */
     caml_free_for_heap(intern_extra_block);
   } else if (intern_block != 0) {
-    /* restore original header for heap block, otherwise GC is confused */
-    Hd_val(intern_block) = intern_header;
+    if (intern_ancient == 0) {
+      /* restore original header for heap block, otherwise GC is confused */
+      Hd_val(intern_block) = intern_header;
+    } else {
+      caml_stat_free(Hp_val(intern_block));
+    }
   }
   /* free the recursion stack */
   intern_free_stack();
@@ -490,34 +500,43 @@ static void intern_rec(value *dest)
 
 static void intern_alloc(mlsize_t whsize, mlsize_t num_objects)
 {
-  mlsize_t wosize;
-
+  intern_block_size = Bsize_wsize(whsize); 
   if (whsize == 0) {
     intern_obj_table = NULL;
     intern_extra_block = NULL;
     intern_block = 0;
     return;
   }
-  wosize = Wosize_whsize(whsize);
-  if (wosize > Max_wosize) {
-    /* Round desired size up to next page */
-    asize_t request =
-      ((Bsize_wsize(whsize) + Page_size - 1) >> Page_log) << Page_log;
-    intern_extra_block = caml_alloc_for_heap(request);
-    if (intern_extra_block == NULL) caml_raise_out_of_memory();
-    intern_color = caml_allocation_color(intern_extra_block);
-    intern_dest = (header_t *) intern_extra_block;
-  } else {
-    /* this is a specialised version of caml_alloc from alloc.c */
-    if (wosize == 0){
-      intern_block = Atom (String_tag);
-    }else if (wosize <= Max_young_wosize){
-      intern_block = caml_alloc_small (wosize, String_tag);
-    }else{
-      intern_block = caml_alloc_shr (wosize, String_tag);
-      /* do not do the urgent_gc check here because it might darken
-         intern_block into gray and break the Assert 3 lines down */
+  if (intern_ancient == 0) {
+    mlsize_t wosize = Wosize_whsize(whsize);
+    if (wosize > Max_wosize) {
+      /* Round desired size up to next page */
+      asize_t request =
+        ((Bsize_wsize(whsize) + Page_size - 1) >> Page_log) << Page_log;
+      intern_extra_block = caml_alloc_for_heap(request);
+      if (intern_extra_block == NULL) caml_raise_out_of_memory();
+      intern_color = caml_allocation_color(intern_extra_block);
+      intern_dest = (header_t *) intern_extra_block;
+    } else {
+      /* this is a specialised version of caml_alloc from alloc.c */
+      if (wosize == 0){
+        intern_block = Atom (String_tag);
+      }else if (wosize <= Max_young_wosize){
+        intern_block = caml_alloc_small (wosize, String_tag);
+      }else{
+        intern_block = caml_alloc_shr (wosize, String_tag);
+        /* do not do the urgent_gc check here because it might darken
+           intern_block into gray and break the Assert 3 lines down */
+      }
+      intern_header = Hd_val(intern_block);
+      intern_color = Color_hd(intern_header);
+      Assert (intern_color == Caml_white || intern_color == Caml_black);
+      intern_dest = (header_t *) Hp_val(intern_block);
+      intern_extra_block = NULL;
     }
+  } else {
+    Assert (intern_block_size > 0);
+    intern_block = Val_hp(caml_stat_alloc(intern_block_size));
     intern_header = Hd_val(intern_block);
     intern_color = Color_hd(intern_header);
     Assert (intern_color == Caml_white || intern_color == Caml_black);
@@ -551,7 +570,44 @@ static void intern_add_to_heap(mlsize_t whsize)
   }
 }
 
-value caml_input_val(struct channel *chan)
+static value caml_ancient_proxy_info(value v)
+{
+  CAMLparam1 (v);
+  CAMLlocal3 (va, info, res);
+  
+  va = caml_alloc_small (1, Abstract_tag);
+  Field (va, 0) = v;
+  info = caml_alloc_small (1, 0);
+  Field(info, 0) = Val_int(intern_block_size);
+  res = caml_alloc_small (2, 0);
+  Field(res, 0) = va;
+  Field(res, 1) = info;
+  CAMLreturn (res);
+}
+
+CAMLprim value caml_ancient_follow(value va)
+{
+  value v;
+
+  Assert(Is_block(va));
+  v = Field(va, 0);
+  if (v == 0) caml_invalid_argument("ancient_follow: deleted");
+  return v;
+}
+
+CAMLprim value caml_ancient_delete(value va)
+{
+  value v;
+
+  Assert(Is_block(va));
+  v = Field(va, 0);
+  if (v == 0) caml_invalid_argument("ancient_delete: deleted");
+  if (Is_block(v) && Wosize_val(v) > 0) caml_stat_free(Hp_val(v)); /* if not int and not Atom */
+  Field(va, 0) = 0;
+  return Val_unit;
+}
+
+static value caml_input_val_aux(struct channel *chan)
 {
   uint32 magic;
   mlsize_t block_len, num_objects, whsize;
@@ -573,7 +629,7 @@ value caml_input_val(struct channel *chan)
 #endif
   /* Read block from channel */
   block = caml_stat_alloc(block_len);
-  /* During [caml_really_getblock], concurrent [caml_input_val] operations
+  /* During [caml_really_getblock], concurrent [caml_input_val_aux] operations
      can take place (via signal handlers or context switching in systhreads),
      and [intern_input] may change.  So, wait until [caml_really_getblock]
      is over before using [intern_input] and the other global vars. */
@@ -594,19 +650,43 @@ value caml_input_val(struct channel *chan)
   return caml_check_urgent_gc(res);
 }
 
-CAMLprim value caml_input_value(value vchan)
+value caml_input_val(struct channel *chan)
+{
+  intern_ancient = 0;
+  return caml_input_val_aux(chan);
+}
+
+value caml_input_val_ancient_info(struct channel *chan)
+{
+  intern_ancient = 1;
+  return caml_ancient_proxy_info(caml_input_val_aux(chan));
+}
+
+static value caml_input_value_aux(value vchan)
 {
   CAMLparam1 (vchan);
   struct channel * chan = Channel(vchan);
   CAMLlocal1 (res);
 
   Lock(chan);
-  res = caml_input_val(chan);
+  res = caml_input_val_aux(chan);
   Unlock(chan);
   CAMLreturn (res);
 }
 
-CAMLexport value caml_input_val_from_string(value str, intnat ofs)
+CAMLprim value caml_input_value(value vchan)
+{
+  intern_ancient = 0;
+  return caml_input_value_aux(vchan);
+}
+
+CAMLprim value caml_input_value_ancient_info(value vchan)
+{
+  intern_ancient = 1;
+  return caml_ancient_proxy_info(caml_input_value_aux(vchan));
+}
+
+static value caml_input_val_from_string_aux(value str, intnat ofs)
 {
   CAMLparam1 (str);
   mlsize_t num_objects, whsize;
@@ -633,9 +713,26 @@ CAMLexport value caml_input_val_from_string(value str, intnat ofs)
   CAMLreturn (caml_check_urgent_gc(obj));
 }
 
+CAMLexport value caml_input_val_from_string(value str, intnat ofs)
+{
+  intern_ancient = 0;
+  return caml_input_val_from_string_aux(str, ofs);
+}
+
+CAMLexport value caml_input_val_from_string_ancient_info(value str, intnat ofs)
+{
+  intern_ancient = 1;
+  return caml_ancient_proxy_info(caml_input_val_from_string_aux(str, ofs));
+}
+
 CAMLprim value caml_input_value_from_string(value str, value ofs)
 {
   return caml_input_val_from_string(str, Long_val(ofs));
+}
+
+CAMLprim value caml_input_value_from_string_ancient_info(value str, value ofs)
+{
+  return caml_input_val_from_string_ancient_info(str, Long_val(ofs));
 }
 
 static value input_val_from_block(void)
@@ -661,7 +758,7 @@ static value input_val_from_block(void)
   return caml_check_urgent_gc(obj);
 }
 
-CAMLexport value caml_input_value_from_malloc(char * data, intnat ofs)
+static value caml_input_value_from_malloc_aux(char * data, intnat ofs)
 {
   uint32 magic;
   value obj;
@@ -679,7 +776,19 @@ CAMLexport value caml_input_value_from_malloc(char * data, intnat ofs)
   return obj;
 }
 
-CAMLexport value caml_input_value_from_block(char * data, intnat len)
+CAMLexport value caml_input_value_from_malloc(char * data, intnat ofs)
+{
+  intern_ancient = 0;
+  return caml_input_value_from_malloc_aux(data, ofs);
+}
+
+CAMLexport value caml_input_value_from_malloc_ancient_info(char * data, intnat ofs)
+{
+  intern_ancient = 1;
+  return caml_ancient_proxy_info(caml_input_value_from_malloc_aux(data, ofs));
+}
+
+CAMLexport value caml_input_value_from_block_aux(char * data, intnat len)
 {
   uint32 magic;
   mlsize_t block_len;
@@ -696,6 +805,18 @@ CAMLexport value caml_input_value_from_block(char * data, intnat len)
     caml_failwith("input_value_from_block: bad block length");
   obj = input_val_from_block();
   return obj;
+}
+
+CAMLexport value caml_input_value_from_block(char * data, intnat len)
+{
+  intern_ancient = 0;
+  return caml_input_value_from_block_aux(data, len);
+}
+
+CAMLexport value caml_input_value_from_block_ancient_info(char * data, intnat len)
+{
+  intern_ancient = 1;
+  return caml_ancient_proxy_info(caml_input_value_from_block_aux(data, len));
 }
 
 CAMLprim value caml_marshal_data_size(value buff, value ofs)
