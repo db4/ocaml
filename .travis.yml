@@ -23,9 +23,11 @@ matrix:
   - env: CI_KIND=build XARCH=i386
     addons:
       apt:
+        sources:
+        - ubuntu-toolchain-r-test
         packages:
-        - gcc:i386
-        - cpp:i386
+        - gcc-6:i386
+        - cpp-6:i386
         - binutils:i386
         - binutils-dev:i386
         - libx11-dev:i386
@@ -38,9 +40,15 @@ matrix:
   - env: CI_KIND=tests
 addons:
   apt:
+    sources:
+    - ubuntu-toolchain-r-test
     packages:
     - binutils-dev
+    - gcc-6
+    - cpp-6
+before_install:
+  - sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-6 60
 
 notifications:
   email:
-    - ocaml-ci-notifications@inria.fr
+    - dmitry.bely@gmail.com
