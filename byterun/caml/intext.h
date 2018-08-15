@@ -117,7 +117,7 @@ CAMLextern value caml_input_value_from_block(char * data, intnat len);
 
 /* Ancient support */
 
-CAMLextern value caml_ancient_mark_info(value v);
+CAMLextern value caml_ancient_mark_info(value v, value flags);
 CAMLextern value caml_ancient_follow(value proxy);
 CAMLextern value caml_ancient_delete(value proxy);
 CAMLextern value caml_input_val_from_string_ancient_info(value str, intnat ofs);

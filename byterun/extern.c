@@ -703,16 +703,13 @@ CAMLexport intnat caml_output_value_to_block(value v, value flags,
   return len_res;
 }
 
-CAMLprim value caml_ancient_mark_info(value v)
+CAMLprim value caml_ancient_mark_info(value v, value flags)
 {
-  CAMLparam1 (v);
-  CAMLlocal2 (flags, va);
+  CAMLparam2 (v, flags);
+  CAMLlocal1 (va);
   char * buf;
   intnat len;
 
-  flags = caml_alloc_small(2, 0);
-  Field(flags, 0) = CLOSURES;
-  Field(flags, 1) = Val_emptylist;
   caml_output_value_to_malloc(v, flags, &buf, &len);
   va = caml_input_value_from_malloc_ancient_info(buf, 0);
   CAMLreturn (va);

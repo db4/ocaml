@@ -21,6 +21,10 @@ val mark: 'a -> 'a ancient
    idea to call {!Gc.compact} after marking to recover the
    OCaml heap memory. *)
 
+val mark_ex : 'a -> Marshal.extern_flags list -> 'a ancient
+(** Same as {!MarshalAncient.mark}, but with explicit
+    [Marshal.extern_flags]. *)
+
 val follow: 'a ancient -> 'a
 (** [MarshalAncient.follow obj] follows proxy link to out of heap value.
    Raise [Invalid_argument "ancient_follow: deleted"] if [obj]
@@ -32,7 +36,7 @@ val delete: 'a ancient -> unit
    has been deleted. Forgetting to delete an ancient object results
    in a memory leak. *)
 
-val from_channel : in_channel -> 'a ancient 
+val from_channel : in_channel -> 'a ancient
 (** Same as {!Marshal.from_channel}, but reconstructs the corresponding
    value in a statically allocated memory outside the OCaml heap like
    {!MarshalAncient.mark} It returns the proxy for the allocated value *)
@@ -54,6 +58,10 @@ val mark_info : 'a -> 'a ancient * info
 (** Same as {!MarshalAncient.mark}, but also returns some
    extra information. *)
 
+val mark_ex_info : 'a -> Marshal.extern_flags list -> 'a ancient * info
+(** Same as {!MarshalAncient.mark}, but with explicit
+    [Marshal.extern_flags]. *)
+
 val from_channel_info : in_channel -> 'a ancient * info
 (** Same as {!MarshalAncient.from_channel}, but also returns some
    extra information. *)
@@ -61,7 +69,7 @@ val from_channel_info : in_channel -> 'a ancient * info
 val from_bytes_info : bytes -> int -> 'a ancient * info
 (** Same as {!MarshalAncient.from_bytes}, but also returns some
    extra information. *)
- 
+
 val from_string_info : string -> int -> 'a ancient * info
 (** Same as [from_bytes_info] but take a string as argument instead of a
     byte sequence. *)

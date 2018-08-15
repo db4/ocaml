@@ -21,12 +21,14 @@ type info = {
 }
 
 external data_size_unsafe: bytes -> int -> int = "caml_marshal_data_size"
-external mark_info: 'a -> 'a ancient * info
+external mark_ex_info: 'a -> Marshal.extern_flags list -> 'a ancient * info
     = "caml_ancient_mark_info"
 external from_channel_info: in_channel -> 'a ancient * info
     = "caml_input_value_ancient_info"
 external from_bytes_unsafe_info: bytes -> int -> 'a ancient * info
     = "caml_input_value_from_string_ancient_info"
+
+let mark_info v = mark_ex_info v [Marshal.Closures]
 
 let from_bytes_info buff ofs =
   if ofs < 0 || ofs > Bytes.length buff - Marshal.header_size
@@ -43,6 +45,7 @@ let from_string_info buff ofs =
      sequence is never mutated *)
   from_bytes_info (Bytes.unsafe_of_string buff) ofs
 
+let mark_ex v flags = fst (mark_ex_info v flags)
 let mark v = fst (mark_info v)
 let from_channel ic = fst (from_channel_info ic)
 let from_bytes buff ofs = fst (from_bytes_info buff ofs)
